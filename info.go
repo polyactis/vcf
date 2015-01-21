@@ -12,7 +12,11 @@ func infoToMap(info string) map[string]interface{} {
 		if strings.Contains(field, "=") {
 			split := strings.Split(field, "=")
 			fieldName, fieldValue := split[0], split[1]
-			infoMap[fieldName] = fieldValue
+			if fieldName == "AC" || fieldName == "AF" {
+				infoMap[fieldName] = strings.Split(fieldValue, ",")
+			} else {
+				infoMap[fieldName] = fieldValue
+			}
 		} else {
 			infoMap[field] = true
 		}
@@ -23,9 +27,9 @@ func infoToMap(info string) map[string]interface{} {
 func buildInfoSubFields(variant *Variant) {
 	info := variant.Info
 	variant.Depth = parseIntFromInfoMap("DP", info)
-	variant.AlleleFrequency = parseFloatFromInfoMap("AF", info)
+	variant.AlleleCount = parseIntSliceFromInfoMap("AC", info)
+	variant.AlleleFrequency = parseFloatSliceFromInfoMap("AF", info)
 	variant.AncestralAllele = parseStringFromInfoMap("AA", info)
-	variant.AlleleCount = parseIntFromInfoMap("AC", info)
 	variant.TotalAlleles = parseIntFromInfoMap("AN", info)
 	variant.End = parseIntFromInfoMap("END", info)
 	variant.MAPQ0Reads = parseIntFromInfoMap("MQ0", info)
@@ -54,6 +58,22 @@ func parseIntFromInfoMap(key string, info map[string]interface{}) *int {
 	return nil
 }
 
+func parseIntSliceFromInfoMap(key string, info map[string]interface{}) []int {
+	if valueSlice, found := info[key]; found {
+		strValueSlice := valueSlice.([]string)
+		returnSlice := make([]int, len(strValueSlice))
+		for i, value := range strValueSlice {
+			convertedValue, err := strconv.Atoi(value)
+			if err == nil {
+				returnSlice[i] = convertedValue
+			}
+		}
+		return returnSlice
+	}
+
+	return nil
+}
+
 func parseStringFromInfoMap(key string, info map[string]interface{}) *string {
 	if value, found := info[key]; found {
 		if str, ok := value.(string); ok {
@@ -66,12 +86,28 @@ func parseStringFromInfoMap(key string, info map[string]interface{}) *string {
 func parseFloatFromInfoMap(key string, info map[string]interface{}) *float64 {
 	if value, found := info[key]; found {
 		if str, ok := value.(string); ok {
-			floatvalue, err := strconv.ParseFloat(str, 64)
+			convertedValue, err := strconv.ParseFloat(str, 64)
 			if err == nil {
-				return &floatvalue
+				return &convertedValue
 			}
 		}
 	}
+	return nil
+}
+
+func parseFloatSliceFromInfoMap(key string, info map[string]interface{}) []float64 {
+	if valueSlice, found := info[key]; found {
+		strValueSlice := valueSlice.([]string)
+		returnSlice := make([]float64, len(strValueSlice))
+		for i, value := range strValueSlice {
+			convertedValue, err := strconv.ParseFloat(value, 64)
+			if err == nil {
+				returnSlice[i] = convertedValue
+			}
+		}
+		return returnSlice
+	}
+
 	return nil
 }
 

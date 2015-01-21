@@ -15,10 +15,11 @@ import (
 // All other fields are optional and will not cause parsing fails if missing or non-conformant.
 type Variant struct {
 	// Required fields
-	Chrom string
-	Pos   int
-	Ref   string
-	Alt   string
+	Chrom   string
+	Pos     int
+	Ref     string
+	Alt     []string
+	Alleles []string
 
 	ID string
 	// Qual is a pointer so that it can be set to nil when it is a dot '.'
@@ -36,8 +37,8 @@ type Variant struct {
 	// Definitions used in the metadata section of the header are not used
 	AncestralAllele *string
 	Depth           *int
-	AlleleFrequency *float64
-	AlleleCount     *int
+	AlleleFrequency []float64
+	AlleleCount     []int
 	TotalAlleles    *int
 	End             *int
 	MAPQ0Reads      *int
@@ -70,7 +71,7 @@ type InvalidLine struct {
 // Variants whose parsing fails go into a specific channel for failing variants.
 // If any of the two channels are full, ToChannel will block. The consumer must guarantee there is enough buffer space on the channels.
 // Both channels are closed when the reader is fully scanned.
-func ToChannel(reader io.Reader, output chan<- *Variant, invalids chan<- InvalidLine) error {
+func ToChannel(reader io.Reader, output chan<- *Variant, invalids chan<- *InvalidLine) error {
 	bufferedReader := bufio.NewReaderSize(reader, 100*1024)
 	header, err := vcfHeader(bufferedReader)
 	if err != nil {
@@ -92,13 +93,14 @@ func ToChannel(reader io.Reader, output chan<- *Variant, invalids chan<- Invalid
 			// If the line is a header don't try to parse
 			continue
 		}
-		variants, err := parseVcfLine(line, header)
-		if variants != nil && err == nil {
-			for _, variant := range variants {
-				output <- variant
-			}
+		variant, err := parseVcfLine(line, header)
+		if variant != nil && err == nil {
+			//for _, variant := range variants {
+			//	output <- variant
+			//}
+			output <- variant
 		} else if err != nil {
-			invalids <- InvalidLine{line, err}
+			invalids <- &InvalidLine{line, err}
 		}
 		// Check again for a read error. This is only possible on EOF
 		if readError != nil {
@@ -150,7 +152,7 @@ type vcfLine struct {
 	Samples                                    []map[string]string
 }
 
-func parseVcfLine(line string, header []string) ([]*Variant, error) {
+func parseVcfLine(line string, header []string) (*Variant, error) {
 	vcfLine, err := splitVcfFields(line)
 	if err != nil {
 		return nil, errors.New("unable to parse apparently misformatted VCF line: " + line)
@@ -161,8 +163,9 @@ func parseVcfLine(line string, header []string) ([]*Variant, error) {
 	pos, _ := strconv.Atoi(vcfLine.Pos)
 	baseVariant.Pos = pos - 1 // converts variant to 0-based
 	baseVariant.Ref = strings.ToUpper(vcfLine.Ref)
-	baseVariant.Alt = strings.ToUpper(strings.Replace(vcfLine.Alt, ".", "", -1))
-
+	altAlleles := strings.ToUpper(strings.Replace(vcfLine.Alt, ".", "", -1))
+	baseVariant.Alt = strings.Split(altAlleles, ",")
+	baseVariant.Alleles = append([]string{baseVariant.Ref}, baseVariant.Alt...)
 	baseVariant.ID = vcfLine.ID
 	floatQuality, err := strconv.ParseFloat(vcfLine.Qual, 64)
 	if err == nil {
@@ -177,42 +180,13 @@ func parseVcfLine(line string, header []string) ([]*Variant, error) {
 	baseVariant.Samples = vcfLine.Samples
 	baseVariant.Info = infoToMap(vcfLine.Info)
 
-	alternatives := strings.Split(baseVariant.Alt, ",")
-
-	info := splitMultipleAltInfos(baseVariant.Info, len(alternatives))
-
-	result := make([]*Variant, 0, 64)
-	for i, alternative := range alternatives {
-
-		if baseVariant.Chrom != "" && baseVariant.Pos >= 0 && baseVariant.Ref != "" && alternative != "" {
-
-			var altinfo map[string]interface{}
-			if i >= len(info) {
-				altinfo = info[0]
-			} else {
-				altinfo = info[i]
-			}
-
-			variant := &Variant{
-				Chrom:   baseVariant.Chrom,
-				Pos:     baseVariant.Pos,
-				Ref:     baseVariant.Ref,
-				Alt:     alternative,
-				ID:      baseVariant.ID,
-				Samples: baseVariant.Samples,
-				Info:    altinfo,
-				Qual:    baseVariant.Qual,
-				Filter:  baseVariant.Filter,
-			}
-			buildInfoSubFields(variant)
-
-			result = append(result, variant)
-
-		} else {
-			return nil, errors.New("error parsing variant: '" + line + "'")
-		}
+	//info := splitMultipleAltInfos(baseVariant.Info, len(baseVariant.Alt))
+	if baseVariant.Chrom != "" && baseVariant.Pos >= 0 && baseVariant.Ref != "" {
+		buildInfoSubFields(&baseVariant)
+		return &baseVariant, nil
+	} else {
+		return nil, errors.New("error parsing variant: '" + line + "'")
 	}
-	return result, nil
 }
 
 func splitVcfFields(line string) (ret *vcfLine, err error) {
