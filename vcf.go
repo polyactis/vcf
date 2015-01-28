@@ -15,11 +15,12 @@ import (
 // All other fields are optional and will not cause parsing fails if missing or non-conformant.
 type Variant struct {
 	// Required fields
-	Chrom   string
-	Pos     int
-	Ref     string
-	Alt     []string
-	Alleles []string
+	Chrom         string
+	ChromInNumber int
+	Pos           int
+	Ref           string
+	Alt           []string
+	Alleles       []string
 
 	ID string
 	// Qual is a pointer so that it can be set to nil when it is a dot '.'
@@ -152,6 +153,42 @@ type vcfLine struct {
 	Samples                                    []map[string]string
 }
 
+var ChromName2number = map[string]int{
+	//0 is reserved when the key does not exist in a map
+	"chrM":  -1,
+	"chr1":  1,
+	"chr2":  2,
+	"chr3":  3,
+	"chr4":  4,
+	"chr5":  5,
+	"chr6":  6,
+	"chr7":  7,
+	"chr8":  8,
+	"chr9":  9,
+	"chr10": 10,
+	"chr11": 11,
+	"chr12": 12,
+	"chr13": 13,
+	"chr14": 14,
+	"chr15": 15,
+	"chr16": 16,
+	"chr17": 17,
+	"chr18": 18,
+	"chr19": 19,
+	"chr20": 20,
+	"chr21": 21,
+	"chr22": 22,
+	"chr23": 23,
+	"chr24": 24,
+	"chr25": 25,
+	"chr26": 26,
+	"chr27": 27,
+	"chr28": 28,
+	"chr29": 29,
+	"chrX":  1000001,
+	"chrY":  1000002,
+}
+
 func parseVcfLine(line string, header []string) (*Variant, error) {
 	vcfLine, err := splitVcfFields(line)
 	if err != nil {
@@ -160,18 +197,19 @@ func parseVcfLine(line string, header []string) (*Variant, error) {
 
 	baseVariant := Variant{}
 	baseVariant.Chrom = vcfLine.Chr
+	baseVariant.ChromInNumber = ChromName2number[vcfLine.Chr]
 	pos, _ := strconv.Atoi(vcfLine.Pos)
-	baseVariant.Pos = pos - 1 // converts variant to 0-based
+	baseVariant.Pos = pos // 1-based
 	baseVariant.Ref = strings.ToUpper(vcfLine.Ref)
 	altAlleles := strings.ToUpper(strings.Replace(vcfLine.Alt, ".", "", -1))
 	baseVariant.Alt = strings.Split(altAlleles, ",")
 	baseVariant.Alleles = append([]string{baseVariant.Ref}, baseVariant.Alt...)
 	baseVariant.ID = vcfLine.ID
 	floatQuality, err := strconv.ParseFloat(vcfLine.Qual, 64)
-	if err == nil {
-		baseVariant.Qual = &floatQuality
-	} else if vcfLine.Qual == "." {
+	if vcfLine.Qual == "." {
 		baseVariant.Qual = nil
+	} else if err == nil {
+		baseVariant.Qual = &floatQuality
 	} else {
 		baseVariant.Qual = nil
 		log.Println("unable to parse quality as float, setting as nil")
